@@ -22,24 +22,24 @@ function Login() {
       password: password,
     };
 
-    // console.log('登录请求参数:', requestOptions);
-    // fetch(`${process.env.REACT_APP_API_BASE_URL}/api/login?account=${encodeURIComponent(account)}&password=${encodeURIComponent(password)}`, requestOptions)
-    // //fetch(`https://122.228.26.226:58359/api/login?account=${encodeURIComponent(account)}&password=${encodeURIComponent(password)}`, requestOptions)
-    //   .then(response => response.json())
-    //   //.then(result => console.log(result))
-    //   //.then(result => setRole(result.data.role))
-    //   .then(result => {
-    //     if(result.status == 200){
-    //     // 保存token到cookie，仅限当前会话
-    //     setCookie(result.data.tokenName, result.data.tokenValue);
-    //     setRole(result.data.role);
-    //   }else{
-    //     toast.error(result.message);
-    //   }
-    //   })
-    //   .catch(error => console.log('error', error));
-    // 根据 role 字段进行页面跳转
-  setRole('user')
+    console.log('登录请求参数:', requestOptions);
+    fetch(`${process.env.REACT_APP_API_BASE_URL}/api/login?account=${encodeURIComponent(account)}&password=${encodeURIComponent(password)}`, requestOptions)
+    //fetch(`https://122.228.26.226:58359/api/login?account=${encodeURIComponent(account)}&password=${encodeURIComponent(password)}`, requestOptions)
+      .then(response => response.json())
+      //.then(result => console.log(result))
+      //.then(result => setRole(result.data.role))
+      .then(result => {
+        if(result.status == 200){
+        // 保存token到cookie，仅限当前会话
+        setCookie(result.data.tokenName, result.data.tokenValue);
+        setRole(result.data.role);
+      }else{
+        toast.error(result.message);
+      }
+      })
+      .catch(error => console.log('error', error));
+  //   根据 role 字段进行页面跳转
+  // setRole('user')
 
   };
   useEffect(() => {
@@ -99,7 +99,7 @@ function Login() {
           />
         </div>
         <div className="button-group">
-          <button type="submit" className="btn btn-primary" onClick={handleSubmit}>
+          <button type="submit" className="btn btn-primary" >
             登录
           </button>
           <button type="button" className="btn btn-secondary" onClick={() => navigate('/register')}>

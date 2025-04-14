@@ -4,63 +4,16 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 function InvoiceManagement() {
-  // 模拟数据
-  const [data, setData] = useState([
-    {
-      id: "CLBX2020090001",
-      buyer: "购买方A",
-      seller: "销售方A",
-      invoiceCode: "123456789012",
-      invoiceNumber: "00000001",
-      invoiceDate: "2020-09-10",
-      verificationCode: "12345678901234567890",
-      totalWithTaxInWords: "伍仟元整",
-      totalWithoutTaxInNumbers: 5000,
-      state: "wait",
-    },
-    {
-      id: "CLBX2020090002",
-      buyer: "购买方B",
-      seller: "销售方B",
-      invoiceCode: "123456789013",
-      invoiceNumber: "00000002",
-      invoiceDate: "2020-09-11",
-      verificationCode: "12345678901234567891",
-      totalWithTaxInWords: "壹万贰仟叁佰叁拾壹元整",
-      totalWithoutTaxInNumbers: 12331,
-      state: "pass",
-    },
-    {
-      id: "CLBX2020090003",
-      buyer: "购买方C",
-      seller: "销售方C",
-      invoiceCode: "123456789014",
-      invoiceNumber: "00000003",
-      invoiceDate: "2020-09-12",
-      verificationCode: "12345678901234567892",
-      totalWithTaxInWords: "壹仟叁佰贰拾伍元整",
-      totalWithoutTaxInNumbers: 1325,
-      state: "unpass",
-    },
-    {
-      id: "CLBX2020090004",
-      buyer: "购买方D",
-      seller: "销售方D",
-      invoiceCode: "123456789015",
-      invoiceNumber: "00000004",
-      invoiceDate: "2020-09-13",
-      verificationCode: "12345678901234567893",
-      totalWithTaxInWords: "壹仟壹佰贰拾肆元整",
-      totalWithoutTaxInNumbers: 1124,
-      state: "pass",
-    },
-  ]);
+  // 发票数据状态
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // 当前筛选状态
   const [activeTab, setActiveTab] = useState("all");
 
-  // 搜索功能
-  const [searchId, setSearchId] = useState("");
+  // 搜索框状态
+  const [searchReimbursementNumber, setSearchReimbursementNumber] = useState("");
   const [searchBuyer, setSearchBuyer] = useState("");
   const [searchSeller, setSearchSeller] = useState("");
   const [searchInvoiceCode, setSearchInvoiceCode] = useState("");
@@ -72,7 +25,7 @@ function InvoiceManagement() {
   const [showModal, setShowModal] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState(null);
   const [formValues, setFormValues] = useState({
-    id: "",
+    reimbursementNumber: "",
     buyer: "",
     seller: "",
     invoiceCode: "",
@@ -81,13 +34,52 @@ function InvoiceManagement() {
     verificationCode: "",
     totalWithTaxInWords: "",
     totalWithoutTaxInNumbers: "",
-    state: "wait",
+    status: "wait",
   });
 
+  // 从后端获取发票数据
+  const fetchInvoices = async (searchParams) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const queryParams = new URLSearchParams(searchParams).toString();
+      const url = queryParams
+        ? `${process.env.REACT_APP_API_BASE_URL}/admin/pageInvoice?page=1&pageSize=10&${queryParams}`
+        : `${process.env.REACT_APP_API_BASE_URL}/admin/pageInvoice?page=1&pageSize=10`;
+
+      const requestOptions = {
+        method: "GET",
+        redirect: "follow",
+        credentials: "include",
+      };
+
+      const response = await fetch(url, requestOptions);
+
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+
+      const result = await response.json();
+
+      if (result) {
+        console.log(result);
+        setInvoices(result.data.record);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setError(error.message);
+      toast.error("获取发票数据失败，请稍后重试！");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 过滤数据
-  const filteredData = data.filter((item) => {
-    if (activeTab !== "all" && item.state !== activeTab) return false;
-    if (searchId && !item.id.includes(searchId)) return false;
+  const filteredData = invoices.filter((item) => {
+    if (activeTab !== "all" && item.status !== activeTab) return false;
+    if (searchReimbursementNumber && !String(item.reimbursementNumber).includes(searchReimbursementNumber)) return false;
     if (searchBuyer && !item.buyer.includes(searchBuyer)) return false;
     if (searchSeller && !item.seller.includes(searchSeller)) return false;
     if (searchInvoiceCode && !item.invoiceCode.includes(searchInvoiceCode)) return false;
@@ -103,15 +95,15 @@ function InvoiceManagement() {
 
   // 计算已经通过的总金额
   const totalApprovedAmount = filteredData
-    .filter((item) => item.state === "pass")
+    .filter((item) => item.status === "approved")
     .reduce((sum, item) => sum + item.totalWithoutTaxInNumbers, 0);
 
   const totalUnapprovedAmount = filteredData
-    .filter((item) => item.state === "unpass")
+    .filter((item) => item.status === "rejected")
     .reduce((sum, item) => sum + parseFloat(item.totalWithoutTaxInNumbers), 0);
 
   const totalPendingAmount = filteredData
-    .filter((item) => item.state === "wait")
+    .filter((item) => item.status === "wait")
     .reduce((sum, item) => sum + parseFloat(item.totalWithoutTaxInNumbers), 0);
 
   // 格式化金额，三位一逗号
@@ -119,48 +111,10 @@ function InvoiceManagement() {
     return amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
-  // 保存发票信息到后端
-  const saveInvoiceToBackend = async (invoiceData, isUpdate) => {
-    try {
-      const myHeaders = new Headers();
-      myHeaders.append("Content-Type", "application/json");
-
-      const raw = JSON.stringify(invoiceData);
-
-      const requestOptions = {
-        method: isUpdate ? "PUT" : "POST",
-        headers: myHeaders,
-        body: raw,
-        redirect: "follow",
-      };
-
-      const response = await fetch(
-        isUpdate ? "/admin/updateInvoice" : "/admin/addInvoice",
-        requestOptions
-      );
-
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
-      }
-
-      const result = await response.json();
-
-      if (result.success) {
-        return result.data;
-      } else {
-        throw new Error(result.message);
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      toast.error("保存失败，请稍后重试！");
-      return null;
-    }
-  };
-
   // 初始化表单
   const initialize = () => {
     setFormValues({
-      id: "",
+      reimbursementNumber: "",
       buyer: "",
       seller: "",
       invoiceCode: "",
@@ -169,7 +123,7 @@ function InvoiceManagement() {
       verificationCode: "",
       totalWithTaxInWords: "",
       totalWithoutTaxInNumbers: "",
-      state: "wait",
+      status: "wait",
     });
   };
 
@@ -201,39 +155,39 @@ function InvoiceManagement() {
 
   // 验证表单
   const validateForm = () => {
-    if (!formValues.id.trim()) {
+    if (!formValues.reimbursementNumber) {
       toast.error("报销编号不能为空");
       return false;
     }
-    if (!formValues.buyer.trim()) {
+    if (!formValues.buyer) {
       toast.error("购买方不能为空");
       return false;
     }
-    if (!formValues.seller.trim()) {
+    if (!formValues.seller) {
       toast.error("销售方不能为空");
       return false;
     }
-    if (!formValues.invoiceCode.trim()) {
+    if (!formValues.invoiceCode) {
       toast.error("发票代码不能为空");
       return false;
     }
-    if (!formValues.invoiceNumber.trim()) {
+    if (!formValues.invoiceNumber) {
       toast.error("发票号码不能为空");
       return false;
     }
-    if (!formValues.invoiceDate.trim()) {
+    if (!formValues.invoiceDate) {
       toast.error("开票日期不能为空");
       return false;
     }
-    if (!formValues.verificationCode.trim()) {
+    if (!formValues.verificationCode) {
       toast.error("校验码不能为空");
       return false;
     }
-    if (!formValues.totalWithTaxInWords.trim()) {
+    if (!formValues.totalWithTaxInWords) {
       toast.error("价税合计（大写）不能为空");
       return false;
     }
-    if (!formValues.totalWithoutTaxInNumbers.trim()) {
+    if (!formValues.totalWithoutTaxInNumbers) {
       toast.error("价税合计（小写）不能为空");
       return false;
     }
@@ -242,7 +196,48 @@ function InvoiceManagement() {
 
   // 检查发票ID是否已存在
   const isInvoiceIdExists = (invoiceId) => {
-    return data.some((invoice) => invoice.id === invoiceId);
+    return invoices.some((invoice) => invoice.reimbursementNumber === invoiceId);
+  };
+
+  // 保存发票信息到后端
+  const saveInvoiceToBackend = async (invoiceData, isUpdate) => {
+    try {
+      const myHeaders = new Headers();
+      myHeaders.append("Content-Type", "application/json");
+
+      const raw = JSON.stringify(invoiceData);
+
+      const requestOptions = {
+        method: isUpdate ? "PUT" : "POST",
+        headers: myHeaders,
+        body: raw,
+        redirect: "follow",
+        credentials: "include",
+      };
+
+      const response = await fetch(
+        isUpdate ? `${process.env.REACT_APP_API_BASE_URL}/accountant/update` : "/admin/addInvoice",
+        requestOptions
+      );
+
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+
+      const result = await response.json();
+
+      if (result) {
+        setEditCount(editCount+1);
+        return true;
+
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      toast.error("保存失败，请稍后重试！");
+      return null;
+    }
   };
 
   // 添加发票
@@ -255,7 +250,7 @@ function InvoiceManagement() {
     }
 
     const newInvoice = {
-      id: formValues.id,
+      reimbursementNumber: formValues.reimbursementNumber,
       buyer: formValues.buyer,
       seller: formValues.seller,
       invoiceCode: formValues.invoiceCode,
@@ -264,13 +259,13 @@ function InvoiceManagement() {
       verificationCode: formValues.verificationCode,
       totalWithTaxInWords: formValues.totalWithTaxInWords,
       totalWithoutTaxInNumbers: parseFloat(formValues.totalWithoutTaxInNumbers),
-      state: formValues.state,
+      status: formValues.status,
     };
 
     const savedInvoice = await saveInvoiceToBackend(newInvoice, false);
 
     if (savedInvoice) {
-      setData([...data, savedInvoice]);
+      setInvoices([...invoices, savedInvoice]);
       setShowModal(false);
       initialize();
       toast.success("发票添加成功");
@@ -279,9 +274,9 @@ function InvoiceManagement() {
 
   // 编辑发票
   const handleEditInvoice = (invoiceId) => {
-    const invoiceToEdit = data.find((invoice) => invoice.id === invoiceId);
+    const invoiceToEdit = invoices.find((invoice) => invoice.reimbursementNumber === invoiceId);
     setFormValues({
-      id: invoiceToEdit.id,
+      reimbursementNumber: invoiceToEdit.reimbursementNumber,
       buyer: invoiceToEdit.buyer,
       seller: invoiceToEdit.seller,
       invoiceCode: invoiceToEdit.invoiceCode,
@@ -290,7 +285,7 @@ function InvoiceManagement() {
       verificationCode: invoiceToEdit.verificationCode,
       totalWithTaxInWords: invoiceToEdit.totalWithTaxInWords,
       totalWithoutTaxInNumbers: invoiceToEdit.totalWithoutTaxInNumbers.toString(),
-      state: invoiceToEdit.state,
+      status: invoiceToEdit.status,
     });
     setEditInvoiceId(invoiceId);
     setShowModal(true);
@@ -301,7 +296,7 @@ function InvoiceManagement() {
     if (!validateForm()) return;
 
     const updatedInvoiceData = {
-      id: formValues.id,
+      reimbursementNumber: formValues.reimbursementNumber,
       buyer: formValues.buyer,
       seller: formValues.seller,
       invoiceCode: formValues.invoiceCode,
@@ -310,10 +305,10 @@ function InvoiceManagement() {
       verificationCode: formValues.verificationCode,
       totalWithTaxInWords: formValues.totalWithTaxInWords,
       totalWithoutTaxInNumbers: parseFloat(formValues.totalWithoutTaxInNumbers),
-      state: formValues.state,
+      status: formValues.status,
     };
 
-    if (isInvoiceIdExists(formValues.id) && formValues.id !== editInvoiceId) {
+    if (isInvoiceIdExists(formValues.reimbursementNumber) && formValues.reimbursementNumber !== editInvoiceId) {
       toast.error("发票ID已存在，无法更新发票");
       return;
     }
@@ -321,7 +316,7 @@ function InvoiceManagement() {
     const updatedInvoice = await saveInvoiceToBackend(updatedInvoiceData, true);
 
     if (updatedInvoice) {
-      setData(data.map((invoice) => (invoice.id === editInvoiceId ? updatedInvoice : invoice)));
+      // setInvoices(invoices.map((invoice) => (invoice.reimbursementNumber === editInvoiceId ? updatedInvoice : invoice)));
       setShowModal(false);
       initialize();
       setEditInvoiceId(null);
@@ -332,8 +327,8 @@ function InvoiceManagement() {
   // 删除发票
   const handleDeleteInvoice = (invoiceId) => {
     if (window.confirm("确定要删除此发票吗？")) {
-      const updatedData = data.filter((invoice) => invoice.id !== invoiceId);
-      setData(updatedData);
+      const updatedInvoices = invoices.filter((invoice) => invoice.reimbursementNumber !== invoiceId);
+      setInvoices(updatedInvoices);
       toast.success("发票删除成功");
     }
   };
@@ -362,6 +357,12 @@ function InvoiceManagement() {
     }
   }, [defaultDate, editInvoiceId, formValues, originalInvoiceDate]);
 
+  const [editCount,setEditCount] = useState(0);
+  // 初始加载发票数据
+  useEffect(() => {
+    fetchInvoices();
+  }, [editCount]);
+
   return (
     <div className="reimbursement-record_invoice_management">
       {/* Toast容器 */}
@@ -382,272 +383,280 @@ function InvoiceManagement() {
         <h1>智能报销系统 - 发票管理界面</h1>
       </div>
 
-      {/* 选项卡 */}
-      <div className="tabs_invoice_management">
-        <button
-          className={activeTab === "all" ? "tab active_invoice_management" : "tab_invoice_management"}
-          onClick={() => setActiveTab("all")}
-        >
-          全部 ({data.length})
-        </button>
-        <button
-          className={activeTab === "wait" ? "tab active_invoice_management" : "tab_invoice_management"}
-          onClick={() => setActiveTab("wait")}
-        >
-          审批中 ({data.filter((item) => item.state === "wait").length})
-        </button>
-        <button
-          className={activeTab === "unpass" ? "tab active_invoice_management" : "tab_invoice_management"}
-          onClick={() => setActiveTab("unpass")}
-        >
-          未通过 ({data.filter((item) => item.state === "unpass").length})
-        </button>
-        <button
-          className={activeTab === "pass" ? "tab active_invoice_management" : "tab_invoice_management"}
-          onClick={() => setActiveTab("pass")}
-        >
-          已通过 ({data.filter((item) => item.state === "pass").length})
-        </button>
-      </div>
-
-      {/* 金额统计 */}
-      <div className="amount-stats_invoice_management">
-        {activeTab === "all" ? (
-          <>
-            <div className="stat-item_invoice_management">
-              <span className="amount-title_invoice_management">已通过金额合计:</span>
-              <span className="amount-value_invoice_management">{formatAmount(totalApprovedAmount)} 元</span>
-            </div>
-            <div className="stat-item_invoice_management">
-              <span className="amount-title_invoice_management">未通过金额合计:</span>
-              <span className="amount-value_invoice_management">{formatAmount(totalUnapprovedAmount)} 元</span>
-            </div>
-            <div className="stat-item_invoice_management">
-              <span className="amount-title_invoice_management">审批中金额合计:</span>
-              <span className="amount-value_invoice_management">{formatAmount(totalPendingAmount)} 元</span>
-            </div>
-          </>
-        ) : activeTab === "pass" ? (
-          <div className="stat-item_invoice_management">
-            <span className="amount-title_invoice_management">已通过金额合计:</span>
-            <span className="amount-value_invoice_management">{formatAmount(totalApprovedAmount)} 元</span>
+      {loading ? (
+        <div className="loading">加载中...</div>
+      ) : error ? (
+        <div className="error">错误: {error}</div>
+      ) : (
+        <>
+          {/* 选项卡 */}
+          <div className="tabs_invoice_management">
+            <button
+              className={activeTab === "all" ? "tab active_invoice_management" : "tab_invoice_management"}
+              onClick={() => setActiveTab("all")}
+            >
+              全部 ({invoices.length})
+            </button>
+            <button
+              className={activeTab === "wait" ? "tab active_invoice_management" : "tab_invoice_management"}
+              onClick={() => setActiveTab("wait")}
+            >
+              审批中 ({invoices.filter((item) => item.status === "wait").length})
+            </button>
+            <button
+              className={activeTab === "rejected" ? "tab active_invoice_management" : "tab_invoice_management"}
+              onClick={() => setActiveTab("rejected")}
+            >
+              未通过 ({invoices.filter((item) => item.status === "rejected").length})
+            </button>
+            <button
+              className={activeTab === "approved" ? "tab active_invoice_management" : "tab_invoice_management"}
+              onClick={() => setActiveTab("approved")}
+            >
+              已通过 ({invoices.filter((item) => item.status === "approved").length})
+            </button>
           </div>
-        ) : activeTab === "unpass" ? (
-          <div className="stat-item_invoice_management">
-            <span className="amount-title_invoice_management">未通过金额合计:</span>
-            <span className="amount-value_invoice_management">{formatAmount(totalUnapprovedAmount)} 元</span>
-          </div>
-        ) : (
-          <div className="stat-item_invoice_management">
-            <span className="amount-title_invoice_management">审批中金额合计:</span>
-            <span className="amount-value_invoice_management">{formatAmount(totalPendingAmount)} 元</span>
-          </div>
-        )}
-      </div>
 
-      {/* 搜索功能 */}
-      <div className="search-bar_invoice_management">
-        <input
-          type="text"
-          placeholder="搜索报销编号"
-          value={searchId}
-          onChange={(e) => setSearchId(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="搜索购买方"
-          value={searchBuyer}
-          onChange={(e) => setSearchBuyer(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="搜索销售方"
-          value={searchSeller}
-          onChange={(e) => setSearchSeller(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="搜索发票代码"
-          value={searchInvoiceCode}
-          onChange={(e) => setSearchInvoiceCode(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="搜索发票号码"
-          value={searchInvoiceNumber}
-          onChange={(e) => setSearchInvoiceNumber(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="搜索开票日期 "
-          value={searchDate}
-          onChange={(e) => setSearchDate(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="搜索价税合计(小写)"
-          value={searchAmount}
-          onChange={(e) => setSearchAmount(e.target.value)}
-        />
-      </div>
-
-      {/* 发票管理部分 */}
-      <div className="invoice-management_invoice_management">
-        <div className="invoice-actions_invoice_management">
-          <button onClick={() => setShowModal(true)}>新增发票</button>
-        </div>
-        <table className="table_invoice_management">
-          <thead>
-            <tr>
-              <th className="th_invoice_management">报销编号</th>
-              <th className="th_invoice_management">购买方</th>
-              <th className="th_invoice_management">销售方</th>
-              <th className="th_invoice_management">发票代码</th>
-              <th className="th_invoice_management">发票号码</th>
-              <th className="th_invoice_management">开票日期</th>
-              <th className="th_invoice_management">校验码</th>
-              <th className="th_invoice_management">价税合计(大写)</th>
-              <th className="th_invoice_management">价税合计(小写)</th>
-              <th className="th_invoice_management">状态</th>
-              <th className="th_invoice_management">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.map((item) => (
-              <tr key={item.id}>
-                <td className="td_invoice_management">{item.id}</td>
-                <td className="td_invoice_management">{item.buyer}</td>
-                <td className="td_invoice_management">{item.seller}</td>
-                <td className="td_invoice_management">{item.invoiceCode}</td>
-                <td className="td_invoice_management">{item.invoiceNumber}</td>
-                <td className="td_invoice_management">{item.invoiceDate}</td>
-                <td className="td_invoice_management">{item.verificationCode}</td>
-                <td className="td_invoice_management">{item.totalWithTaxInWords}</td>
-                <td className="td_invoice_management">{item.totalWithoutTaxInNumbers}</td>
-                <td className="td_invoice_management">
-                  {item.state === "wait" && <span className="status-wait_invoice_management">审批中</span>}
-                  {item.state === "pass" && <span className="status-pass_invoice_management">已通过</span>}
-                  {item.state === "unpass" && <span className="status-unpass_invoice_management">未通过</span>}
-                </td>
-                <td className="td_invoice_management">
-                  <button className="button_invoice_management" onClick={() => handleEditInvoice(item.id)}>编辑</button>
-                  <button className="button_invoice_management" onClick={() => handleDeleteInvoice(item.id)}>删除</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* 模态框 */}
-      {showModal && (
-        <div className="modal_invoice_management">
-          <div className="modal-content_invoice_management">
-            <h2>{editInvoiceId ? "编辑发票" : "新增发票"}</h2>
-            <div className="form-group_invoice_management">
-              <label>报销编号:</label>
-              <input
-                type="text"
-                name="id"
-                value={formValues.id}
-                onChange={handleFormChange}
-                disabled={!!editInvoiceId}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>购买方:</label>
-              <input
-                type="text"
-                name="buyer"
-                value={formValues.buyer}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>销售方:</label>
-              <input
-                type="text"
-                name="seller"
-                value={formValues.seller}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>发票代码:</label>
-              <input
-                type="text"
-                name="invoiceCode"
-                value={formValues.invoiceCode}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>发票号码:</label>
-              <input
-                type="text"
-                name="invoiceNumber"
-                value={formValues.invoiceNumber}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>开票日期:</label>
-              <input
-                type="date"
-                name="invoiceDate"
-                value={formValues.invoiceDate}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>校验码:</label>
-              <input
-                type="text"
-                name="verificationCode"
-                value={formValues.verificationCode}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>价税合计(大写):</label>
-              <input
-                type="text"
-                name="totalWithTaxInWords"
-                value={formValues.totalWithTaxInWords}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>价税合计(小写):</label>
-              <input
-                type="number"
-                name="totalWithoutTaxInNumbers"
-                value={formValues.totalWithoutTaxInNumbers}
-                onChange={handleFormChange}
-              />
-            </div>
-            <div className="form-group_invoice_management">
-              <label>状态:</label>
-              <select
-                name="state"
-                value={formValues.state}
-                onChange={handleFormChange}
-              >
-                <option value="wait">审批中</option>
-                <option value="pass">已通过</option>
-                <option value="unpass">未通过</option>
-              </select>
-            </div>
-            <div className="modal-actions_invoice_management">
-              <button onClick={() => handleCancel()}>取消</button>
-              {editInvoiceId ? (
-                <button onClick={handleUpdateInvoice}>更新</button>
-              ) : (
-                <button onClick={handleAddInvoice}>添加</button>
-              )}
-            </div>
+          {/* 金额统计 */}
+          <div className="amount-stats_invoice_management">
+            {activeTab === "all" ? (
+              <>
+                <div className="stat-item_invoice_management">
+                  <span className="amount-title_invoice_management">已通过金额合计:</span>
+                  <span className="amount-value_invoice_management">{formatAmount(totalApprovedAmount)} 元</span>
+                </div>
+                <div className="stat-item_invoice_management">
+                  <span className="amount-title_invoice_management">未通过金额合计:</span>
+                  <span className="amount-value_invoice_management">{formatAmount(totalUnapprovedAmount)} 元</span>
+                </div>
+                <div className="stat-item_invoice_management">
+                  <span className="amount-title_invoice_management">审批中金额合计:</span>
+                  <span className="amount-value_invoice_management">{formatAmount(totalPendingAmount)} 元</span>
+                </div>
+              </>
+            ) : activeTab === "approved" ? (
+              <div className="stat-item_invoice_management">
+                <span className="amount-title_invoice_management">已通过金额合计:</span>
+                <span className="amount-value_invoice_management">{formatAmount(totalApprovedAmount)} 元</span>
+              </div>
+            ) : activeTab === "rejected" ? (
+              <div className="stat-item_invoice_management">
+                <span className="amount-title_invoice_management">未通过金额合计:</span>
+                <span className="amount-value_invoice_management">{formatAmount(totalUnapprovedAmount)} 元</span>
+              </div>
+            ) : (
+              <div className="stat-item_invoice_management">
+                <span className="amount-title_invoice_management">审批中金额合计:</span>
+                <span className="amount-value_invoice_management">{formatAmount(totalPendingAmount)} 元</span>
+              </div>
+            )}
           </div>
-        </div>
+
+          {/* 搜索功能 */}
+          <div className="search-bar_invoice_management">
+            <input
+              type="text"
+              placeholder="搜索报销编号"
+              value={searchReimbursementNumber}
+              onChange={(e) => setSearchReimbursementNumber(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="搜索购买方"
+              value={searchBuyer}
+              onChange={(e) => setSearchBuyer(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="搜索销售方"
+              value={searchSeller}
+              onChange={(e) => setSearchSeller(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="搜索发票代码"
+              value={searchInvoiceCode}
+              onChange={(e) => setSearchInvoiceCode(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="搜索发票号码"
+              value={searchInvoiceNumber}
+              onChange={(e) => setSearchInvoiceNumber(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="搜索开票日期 "
+              value={searchDate}
+              onChange={(e) => setSearchDate(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="搜索价税合计(小写)"
+              value={searchAmount}
+              onChange={(e) => setSearchAmount(e.target.value)}
+            />
+          </div>
+
+          {/* 发票管理部分 */}
+          <div className="invoice-management_invoice_management">
+            <div className="invoice-actions_invoice_management">
+              <button onClick={() => setShowModal(true)}>新增发票</button>
+            </div>
+            <table className="table_invoice_management">
+              <thead>
+                <tr>
+                  <th className="th_invoice_management">报销编号</th>
+                  <th className="th_invoice_management">购买方</th>
+                  <th className="th_invoice_management">销售方</th>
+                  <th className="th_invoice_management">发票代码</th>
+                  <th className="th_invoice_management">发票号码</th>
+                  <th className="th_invoice_management">开票日期</th>
+                  <th className="th_invoice_management">校验码</th>
+                  <th className="th_invoice_management">价税合计(大写)</th>
+                  <th className="th_invoice_management">价税合计(小写)</th>
+                  <th className="th_invoice_management">状态</th>
+                  <th className="th_invoice_management">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.map((item) => (
+                  <tr key={item.reimbursementNumber}>
+                    <td className="td_invoice_management">{item.reimbursementNumber}</td>
+                    <td className="td_invoice_management">{item.buyer}</td>
+                    <td className="td_invoice_management">{item.seller}</td>
+                    <td className="td_invoice_management">{item.invoiceCode}</td>
+                    <td className="td_invoice_management">{item.invoiceNumber}</td>
+                    <td className="td_invoice_management">{item.invoiceDate}</td>
+                    <td className="td_invoice_management">{item.verificationCode}</td>
+                    <td className="td_invoice_management">{item.totalWithTaxInWords}</td>
+                    <td className="td_invoice_management">{item.totalWithoutTaxInNumbers}</td>
+                    <td className="td_invoice_management">
+                      {item.status === "wait" && <span className="status-wait_invoice_management">审批中</span>}
+                      {item.status === "approved" && <span className="status-pass_invoice_management">已通过</span>}
+                      {item.status === "rejected" && <span className="status-unpass_invoice_management">未通过</span>}
+                    </td>
+                    <td className="td_invoice_management">
+                      <button className="button_invoice_management" onClick={() => handleEditInvoice(item.reimbursementNumber)}>编辑</button>
+                      <button className="button_invoice_management" onClick={() => handleDeleteInvoice(item.reimbursementNumber)}>删除</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 模态框 */}
+          {showModal && (
+            <div className="modal_invoice_management">
+              <div className="modal-content_invoice_management">
+                <h2>{editInvoiceId ? "编辑发票" : "新增发票"}</h2>
+                <div className="form-group_invoice_management">
+                  <label>报销编号:</label>
+                  <input
+                    type="text"
+                    name="reimbursementNumber"
+                    value={formValues.reimbursementNumber}
+                    onChange={handleFormChange}
+                    disabled={!!editInvoiceId}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>购买方:</label>
+                  <input
+                    type="text"
+                    name="buyer"
+                    value={formValues.buyer}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>销售方:</label>
+                  <input
+                    type="text"
+                    name="seller"
+                    value={formValues.seller}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>发票代码:</label>
+                  <input
+                    type="text"
+                    name="invoiceCode"
+                    value={formValues.invoiceCode}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>发票号码:</label>
+                  <input
+                    type="text"
+                    name="invoiceNumber"
+                    value={formValues.invoiceNumber}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>开票日期:</label>
+                  <input
+                    type="date"
+                    name="invoiceDate"
+                    value={formValues.invoiceDate}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>校验码:</label>
+                  <input
+                    type="text"
+                    name="verificationCode"
+                    value={formValues.verificationCode}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>价税合计(大写):</label>
+                  <input
+                    type="text"
+                    name="totalWithTaxInWords"
+                    value={formValues.totalWithTaxInWords}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>价税合计(小写):</label>
+                  <input
+                    type="number"
+                    name="totalWithoutTaxInNumbers"
+                    value={formValues.totalWithoutTaxInNumbers}
+                    onChange={handleFormChange}
+                  />
+                </div>
+                <div className="form-group_invoice_management">
+                  <label>状态:</label>
+                  <select
+                    name="status"
+                    value={formValues.status}
+                    onChange={handleFormChange}
+                  >
+                    <option value="wait">审批中</option>
+                    <option value="approved">已通过</option>
+                    <option value="rejected">未通过</option>
+                  </select>
+                </div>
+                <div className="modal-actions_invoice_management">
+                  <button onClick={() => handleCancel()}>取消</button>
+                  {editInvoiceId ? (
+                    <button onClick={handleUpdateInvoice}>更新</button>
+                  ) : (
+                    <button onClick={handleAddInvoice}>添加</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
